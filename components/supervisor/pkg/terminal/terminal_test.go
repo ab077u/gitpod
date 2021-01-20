@@ -16,7 +16,98 @@ import (
 	"github.com/gitpod-io/gitpod/supervisor/api"
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 )
+
+func TestTitle(t *testing.T) {
+	tests := []struct {
+		Desc        string
+		Command     string
+		Expectation string
+	}{
+		{
+			Desc:        "watch",
+			Command:     "watch ls",
+			Expectation: "watch",
+		},
+		{
+			Desc:        "sh",
+			Command:     "sh",
+			Expectation: "sh",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.Desc, func(t *testing.T) {
+			mux := NewMux()
+			defer mux.Close()
+
+			terminalService := NewMuxTerminalService(mux)
+			term, err := terminalService.Open(context.Background(), &api.OpenTerminalRequest{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff("/bin/bash", term.Title); diff != "" {
+				t.Errorf("unexpected output (-want +got):\n%s", diff)
+			}
+
+			listener := &TestTitleTerminalServiceListener{
+				resps: make(chan *api.ListenTerminalResponse),
+			}
+			titles := listener.Titles(2)
+			go func() {
+				terminalService.Listen(&api.ListenTerminalRequest{Alias: term.Alias}, listener)
+			}()
+
+			title := <-titles
+			if diff := cmp.Diff("/bin/bash", title); diff != "" {
+				t.Errorf("unexpected output (-want +got):\n%s", diff)
+			}
+
+			_, err = terminalService.Write(context.Background(), &api.WriteTerminalRequest{Alias: term.Alias, Stdin: []byte(test.Command + "\r\n")})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			title = <-titles
+			if diff := cmp.Diff(test.Expectation, title); diff != "" {
+				t.Errorf("unexpected output (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+type TestTitleTerminalServiceListener struct {
+	resps chan *api.ListenTerminalResponse
+	grpc.ServerStream
+}
+
+func (listener *TestTitleTerminalServiceListener) Send(resp *api.ListenTerminalResponse) error {
+	listener.resps <- resp
+	return nil
+}
+
+func (listener *TestTitleTerminalServiceListener) Context() context.Context {
+	return context.Background()
+}
+
+func (listener *TestTitleTerminalServiceListener) Titles(size int) chan string {
+	title := make(chan string, size)
+	go func() {
+		for {
+			select {
+			case resp := <-listener.resps:
+				{
+					titleChanged, ok := resp.Output.(*api.ListenTerminalResponse_Title)
+					if ok {
+						title <- titleChanged.Title
+						break
+					}
+				}
+			}
+		}
+	}()
+	return title
+}
 
 func TestAnnotations(t *testing.T) {
 	tests := []struct {

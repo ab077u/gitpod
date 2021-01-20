@@ -74,7 +74,11 @@ func (srv *MuxTerminalService) Open(ctx context.Context, req *api.OpenTerminalRe
 // OpenWithOptions opens a new terminal running the shell with given options.
 // req.Annotations override options.Annotations.
 func (srv *MuxTerminalService) OpenWithOptions(ctx context.Context, req *api.OpenTerminalRequest, options TermOptions) (*api.OpenTerminalResponse, error) {
-	cmd := exec.Command(srv.DefaultShell)
+	shell := req.Shell
+	if shell == "" {
+		shell = srv.DefaultShell
+	}
+	cmd := exec.Command(shell, req.ShellArgs...)
 	if req.Workdir == "" {
 		cmd.Dir = srv.DefaultWorkdir
 	} else {
@@ -86,6 +90,14 @@ func (srv *MuxTerminalService) OpenWithOptions(ctx context.Context, req *api.Ope
 	}
 	for k, v := range req.Annotations {
 		options.Annotations[k] = v
+	}
+	if req.Size != nil {
+		options.Size = &pty.Winsize{
+			Cols: uint16(req.Size.Cols),
+			Rows: uint16(req.Size.Rows),
+			X:    uint16(req.Size.WidthPx),
+			Y:    uint16(req.Size.HeightPx),
+		}
 	}
 	alias, err := srv.Mux.Start(cmd, options)
 	if err != nil {
@@ -102,12 +114,18 @@ func (srv *MuxTerminalService) OpenWithOptions(ctx context.Context, req *api.Ope
 	return &api.OpenTerminalResponse{
 		Alias:        alias,
 		StarterToken: starterToken,
+		Pid:          int64(term.Command.Process.Pid),
+		Workdir:      term.Command.Dir,
+		Title:        term.Command.Args[0],
 	}, nil
 }
 
 // Close closes a terminal for the given alias
-func (srv *MuxTerminalService) Close(ctx context.Context, req *api.CloseTerminalRequest) (*api.CloseTerminalResponse, error) {
+func (srv *MuxTerminalService) Shutdown(ctx context.Context, req *api.CloseTerminalRequest) (*api.CloseTerminalResponse, error) {
 	err := srv.Mux.CloseTerminal(req.Alias, closeTerminaldefaultGracePeriod)
+	if err == ErrNotFound {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -119,35 +137,65 @@ func (srv *MuxTerminalService) List(ctx context.Context, req *api.ListTerminalsR
 	srv.Mux.mu.RLock()
 	defer srv.Mux.mu.RUnlock()
 
-	res := make([]*api.ListTerminalsResponse_Terminal, 0, len(srv.Mux.terms))
-	for alias, term := range srv.Mux.terms {
-		var (
-			pid int64
-			cwd string
-			err error
-		)
-		if proc := term.Command.Process; proc != nil {
-			pid = int64(proc.Pid)
-			cwd, err = filepath.EvalSymlinks(fmt.Sprintf("/proc/%d/cwd", pid))
-			if err != nil {
-				log.WithError(err).WithField("pid", pid).Warn("unable to resolve terminal's current working dir")
-				cwd = term.Command.Dir
-			}
+	res := make([]*api.Terminal, 0, len(srv.Mux.terms))
+	for alias := range srv.Mux.terms {
+		term, ok := srv.get(alias)
+		if !ok {
+			continue
 		}
-
-		res = append(res, &api.ListTerminalsResponse_Terminal{
-			Alias:          alias,
-			Command:        term.Command.Args,
-			Pid:            pid,
-			InitialWorkdir: term.Command.Dir,
-			CurrentWorkdir: cwd,
-			Annotations:    term.Annotations,
-		})
+		res = append(res, term)
 	}
 
 	return &api.ListTerminalsResponse{
 		Terminals: res,
 	}, nil
+}
+
+// Get returns an open terminal info
+func (srv *MuxTerminalService) Get(ctx context.Context, req *api.GetTerminalsRequest) (*api.Terminal, error) {
+	srv.Mux.mu.RLock()
+	defer srv.Mux.mu.RUnlock()
+	term, ok := srv.get(req.Alias)
+	if !ok {
+		return nil, status.Error(codes.NotFound, "terminal not found")
+	}
+	return term, nil
+}
+
+func (srv *MuxTerminalService) get(alias string) (*api.Terminal, bool) {
+	term, ok := srv.Mux.terms[alias]
+	if !ok {
+		return nil, false
+	}
+
+	var (
+		pid int64
+		cwd string
+		err error
+	)
+	if proc := term.Command.Process; proc != nil {
+		pid = int64(proc.Pid)
+		cwd, err = filepath.EvalSymlinks(fmt.Sprintf("/proc/%d/cwd", pid))
+		if err != nil {
+			log.WithError(err).WithField("pid", pid).Warn("unable to resolve terminal's current working dir")
+			cwd = term.Command.Dir
+		}
+	}
+
+	title, err := term.Title()
+	if err != nil {
+		log.WithError(err).WithField("pid", pid).Warn("unable to resolve terminal's title")
+	}
+
+	return &api.Terminal{
+		Alias:          alias,
+		Command:        term.Command.Args,
+		Pid:            pid,
+		InitialWorkdir: term.Command.Dir,
+		CurrentWorkdir: cwd,
+		Annotations:    term.Annotations,
+		Title:          title,
+	}, true
 }
 
 // Listen listens to a terminal
@@ -159,6 +207,7 @@ func (srv *MuxTerminalService) Listen(req *api.ListenTerminalRequest, resp api.T
 		return status.Error(codes.NotFound, "terminal not found")
 	}
 	stdout := term.Stdout.Listen()
+	defer stdout.Close()
 
 	log.WithField("alias", req.Alias).Info("new terminal client")
 	defer log.WithField("alias", req.Alias).Info("terminal client left")
@@ -168,16 +217,56 @@ func (srv *MuxTerminalService) Listen(req *api.ListenTerminalRequest, resp api.T
 		buf := make([]byte, 4096)
 		for {
 			n, err := stdout.Read(buf)
+			if err == io.EOF {
+				break
+			}
 			if err != nil {
 				errchan <- err
 				return
 			}
 
-			// TODO(cw): find out how to separate stdout/stderr
-			err = resp.Send(&api.ListenTerminalResponse{Output: &api.ListenTerminalResponse_Stdout{Stdout: buf[:n]}})
+			err = resp.Send(&api.ListenTerminalResponse{Output: &api.ListenTerminalResponse_Data{Data: buf[:n]}})
 			if err != nil {
 				errchan <- err
 				return
+			}
+		}
+
+		state, err := term.Wait()
+		if err != nil {
+			errchan <- err
+			return
+		}
+
+		err = resp.Send(&api.ListenTerminalResponse{Output: &api.ListenTerminalResponse_ExitCode{ExitCode: int32(state.ExitCode())}})
+		if err != nil {
+			errchan <- err
+			return
+		}
+		errchan <- io.EOF
+	}()
+	go func() {
+		title, _ := term.Title()
+		err := resp.Send(&api.ListenTerminalResponse{Output: &api.ListenTerminalResponse_Title{Title: title}})
+		if err != nil {
+			errchan <- err
+			return
+		}
+		for {
+			select {
+			case <-resp.Context().Done():
+				return
+			case <-time.After(200 * time.Millisecond):
+				newTitle, _ := term.Title()
+				if title == newTitle {
+					continue
+				}
+				title = newTitle
+				err := resp.Send(&api.ListenTerminalResponse{Output: &api.ListenTerminalResponse_Title{Title: title}})
+				if err != nil {
+					errchan <- err
+					return
+				}
 			}
 		}
 	}()
@@ -225,10 +314,10 @@ func (srv *MuxTerminalService) SetSize(ctx context.Context, req *api.SetTerminal
 	}
 
 	err := pty.Setsize(term.PTY, &pty.Winsize{
-		Cols: uint16(req.Cols),
-		Rows: uint16(req.Rows),
-		X:    uint16(req.WidthPx),
-		Y:    uint16(req.HeightPx),
+		Cols: uint16(req.Size.Cols),
+		Rows: uint16(req.Size.Rows),
+		X:    uint16(req.Size.WidthPx),
+		Y:    uint16(req.Size.HeightPx),
 	})
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
