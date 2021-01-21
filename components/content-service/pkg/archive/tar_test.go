@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -92,5 +93,67 @@ func TestBuildTarbalMaxSize(t *testing.T) {
 
 	for _, c := range cleanup {
 		os.RemoveAll(c)
+	}
+}
+
+func TestExtractTarbal(t *testing.T) {
+	files := []struct {
+		Name        string
+		ContentSize int64
+		Uid         int
+	}{
+		// would be nice to test this with different uids and even uid mappings, but it would reuqire to run the test privileged
+		{"file.txt", 1024, 33333},
+		{"file2.txt", 1024, 33333},
+	}
+
+	wd, err := ioutil.TempDir("", "")
+	// defer os.RemoveAll(wd)
+	if err != nil {
+		t.Errorf("cannot prepare test: %v", err)
+		t.FailNow()
+	}
+	sourceFolder := filepath.Join(wd, "source")
+	os.MkdirAll(sourceFolder, 0777)
+
+	for _, file := range files {
+		fileName := filepath.Join(sourceFolder, file.Name)
+		err = ioutil.WriteFile(fileName, make([]byte, file.ContentSize), 0644)
+		if err != nil {
+			t.Errorf("cannot prepare test: %v", err)
+			continue
+		}
+		err = os.Chown(fileName, file.Uid, file.Uid)
+		if err != nil {
+			t.Errorf("Cannot chown %s to %d: %s", file.Name, file.Uid, err)
+		}
+	}
+	tarFile := filepath.Join(wd, "my.tar")
+	BuildTarbal(context.Background(), sourceFolder, tarFile)
+
+	reader, err := os.Open(tarFile)
+	if err != nil {
+		t.Errorf("Cannot open %s", tarFile)
+	}
+	targetFolder := filepath.Join(wd, "target")
+	os.MkdirAll(targetFolder, 0777)
+	ExtractTarbal(context.Background(), reader, targetFolder)
+
+	for _, file := range files {
+		stat, err := os.Stat(filepath.Join(targetFolder, file.Name))
+		if err != nil {
+			t.Errorf("expected %s", file.Name)
+			continue
+		}
+		uid := stat.Sys().(*syscall.Stat_t).Uid
+		if uid != uint32(file.Uid) {
+			t.Errorf("expected uid %d", file.Uid)
+			continue
+		}
+		gid := stat.Sys().(*syscall.Stat_t).Gid
+		if gid != uint32(file.Uid) {
+			t.Errorf("expected gid %d", file.Uid)
+			continue
+		}
 	}
 }

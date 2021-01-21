@@ -21,6 +21,7 @@ import (
 
 	"github.com/gitpod-io/gitpod/common-go/log"
 	csapi "github.com/gitpod-io/gitpod/content-service/api"
+	"github.com/gitpod-io/gitpod/content-service/pkg/archive"
 	"github.com/gitpod-io/gitpod/content-service/pkg/git"
 	"github.com/gitpod-io/gitpod/content-service/pkg/storage"
 
@@ -813,24 +814,24 @@ func (rs *mockGCloudStorage) EnsureExists(ctx context.Context) error {
 }
 
 // Download always returns false and does nothing
-func (rs *mockGCloudStorage) Download(ctx context.Context, destination string, name string) (bool, error) {
+func (rs *mockGCloudStorage) Download(ctx context.Context, destination string, name string, mappings []archive.IDMapping) (bool, error) {
 	rs.Delegate.ObjectAccess = func(ctx context.Context, bkt, obj string) (io.ReadCloser, bool, error) {
 		log.WithField("fixture", rs.Fixture).Debug("intercepting object access")
 		f, err := os.OpenFile(rs.Fixture, os.O_RDONLY, 0644)
 		return f, false, err
 	}
 
-	return rs.Delegate.Download(ctx, destination, name)
+	return rs.Delegate.Download(ctx, destination, name, mappings)
 }
 
 // Download always returns false and does nothing
-func (rs *mockGCloudStorage) DownloadSnapshot(ctx context.Context, destination string, name string) (bool, error) {
+func (rs *mockGCloudStorage) DownloadSnapshot(ctx context.Context, destination string, name string, mappings []archive.IDMapping) (bool, error) {
 	rs.Delegate.ObjectAccess = func(ctx context.Context, bkt, obj string) (io.ReadCloser, bool, error) {
 		f, err := os.OpenFile(rs.Fixture, os.O_RDONLY, 0644)
 		return f, false, err
 	}
 
-	return rs.Delegate.DownloadSnapshot(ctx, destination, name)
+	return rs.Delegate.DownloadSnapshot(ctx, destination, name, mappings)
 }
 
 func (rs *mockGCloudStorage) Qualify(name string) string {
