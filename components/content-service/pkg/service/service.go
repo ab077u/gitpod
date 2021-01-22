@@ -43,7 +43,7 @@ func (cs *ContentService) UploadUrl(ctx context.Context, req *api.UploadUrlReque
 
 	info, err := cs.s.SignUpload(ctx, cs.s.Bucket(req.OwnerId), blobName)
 	if err != nil {
-		log.Error("Error getting SignUpload URL: ", err)
+		log.Error("error getting SignUpload URL: ", err)
 		return nil, err
 	}
 
@@ -66,7 +66,7 @@ func (cs *ContentService) DownloadUrl(ctx context.Context, req *api.DownloadUrlR
 
 	info, err := cs.s.SignDownload(ctx, cs.s.Bucket(req.OwnerId), blobName)
 	if err != nil {
-		log.Error("Error getting SignDownload URL: ", err)
+		log.Error("error getting SignDownload URL: ", err)
 		return nil, err
 	}
 
