@@ -91,7 +91,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	out, err := os.OpenFile("gitpod-service.go", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	out, err := os.OpenFile("../go/gitpod-service.go", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
