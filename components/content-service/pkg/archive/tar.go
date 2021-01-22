@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"sort"
 	"time"
 
 	"github.com/docker/docker/pkg/archive"
@@ -118,16 +119,26 @@ func ExtractTarbal(ctx context.Context, src io.Reader, dst string, opts ...TarOp
 		return xerrors.Errorf("tar %s: %s", dst, err.Error()+";"+string(msg))
 	}
 	<-finished
-	for k, v := range m {
+
+	// lets create a sorted list of pathes and chown depth first.
+	pathes := make([]string, len(m))
+	i := 0
+	for path := range m {
+		pathes[i] = path
+		i++
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(pathes)))
+	for _, p := range pathes {
+		v := m[p]
 		uid := toHostId(v.UID, cfg.UIDMaps)
 		gid := toHostId(v.GID, cfg.GIDMaps)
-		err = os.Chown(path.Join(dst, k), uid, gid)
+		err = os.Lchown(path.Join(dst, p), uid, gid)
 		if err != nil {
-			log.Errorf("cannot chown %s to %d:%d : %s", k, uid, gid, err.Error())
+			log.Errorf("cannot chown %s to %d:%d : %s", p, uid, gid, err.Error())
 		}
 	}
 	t := time.Now()
-	log.Debugf("Untar took %d ms", t.Sub(start)*time.Millisecond)
+	log.Debugf("Untar took %d ms", t.Sub(start).Milliseconds())
 	return nil
 }
 
