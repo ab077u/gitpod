@@ -38,6 +38,8 @@ func main() {
 				"pivot_root",
 				"setdomainname",
 				"sethostname",
+				"open_tree",
+				"move_mount",
 			},
 			Action: specs.ActAllow,
 		},

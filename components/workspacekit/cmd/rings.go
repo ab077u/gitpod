@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gitpod-io/gitpod/common-go/log"
+	"github.com/gitpod-io/gitpod/workspacekit/pkg/nsenter"
 	"github.com/gitpod-io/gitpod/workspacekit/pkg/seccomp"
 	daemonapi "github.com/gitpod-io/gitpod/ws-daemon/api"
 
@@ -218,7 +219,7 @@ var ring1Cmd = &cobra.Command{
 		unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0)
 		runtime.UnlockOSThread()
 
-		tmpdir, err := ioutil.TempDir("", "supervisor")
+		ring2Root, err := ioutil.TempDir("", "supervisor")
 		if err != nil {
 			log.WithError(err).Fatal("cannot create tempdir")
 		}
@@ -231,19 +232,20 @@ var ring1Cmd = &cobra.Command{
 		}{
 			// TODO(cw): pull mark mount location from config
 			{Target: "/", Source: "/.workspace/mark", FSType: "shiftfs"},
+			{Target: "/", Flags: unix.MS_SLAVE | unix.MS_REC},
 			{Target: "/sys", Flags: unix.MS_BIND | unix.MS_REC},
 			{Target: "/dev", Flags: unix.MS_BIND | unix.MS_REC},
 			// TODO(cw): only mount /theia if it's in the mount table, i.e. this isn't a registry-facade workspace
 			{Target: "/theia", Flags: unix.MS_BIND | unix.MS_REC},
 			// TODO(cw): only mount /workspace if it's in the mount table, i.e. this isn't an FWB workspace
-			{Target: "/workspace", Flags: unix.MS_BIND | unix.MS_REC},
+			{Target: "/workspace", Flags: unix.MS_BIND | unix.MS_REC | unix.MS_SLAVE},
 			{Target: "/etc/hosts", Flags: unix.MS_BIND | unix.MS_REC},
 			{Target: "/etc/hostname", Flags: unix.MS_BIND | unix.MS_REC},
 			{Target: "/etc/resolv.conf", Flags: unix.MS_BIND | unix.MS_REC},
 			{Target: "/tmp", Source: "tmpfs", FSType: "tmpfs"},
 		}
 		for _, m := range mnts {
-			dst := filepath.Join(tmpdir, m.Target)
+			dst := filepath.Join(ring2Root, m.Target)
 			_ = os.MkdirAll(dst, 0644)
 
 			if m.Source == "" {
@@ -281,7 +283,7 @@ var ring1Cmd = &cobra.Command{
 			Pdeathsig:  syscall.SIGKILL,
 			Cloneflags: syscall.CLONE_NEWNS | syscall.CLONE_NEWPID,
 		}
-		cmd.Dir = tmpdir
+		cmd.Dir = ring2Root
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -294,7 +296,7 @@ var ring1Cmd = &cobra.Command{
 		sigc := sigproxy.ForwardAllSignals(context.Background(), cmd.Process.Pid)
 		defer sigproxysignal.StopCatch(sigc)
 
-		procLoc := filepath.Join(tmpdir, "proc")
+		procLoc := filepath.Join(ring2Root, "proc")
 		err = os.MkdirAll(procLoc, 0755)
 		if err != nil {
 			log.WithError(err).Error("cannot mount proc")
@@ -309,12 +311,9 @@ var ring1Cmd = &cobra.Command{
 			failed = true
 			return
 		}
-
-		// TODO(cw): this mount doesn't work because we need to be in the ring2 mount namespace.
-		// Use nsenter/mount handler to do this.
-		err = unix.Mount(resp.Location, procLoc, "", unix.MS_MOVE, "")
+		err = nsenter.Mount(cmd.Process.Pid, resp.Location, procLoc, "", unix.MS_MOVE, "")
 		if err != nil {
-			log.WithError(err).WithFields(map[string]interface{}{"loc": resp.Location, "dest": procLoc}).Error("cannot move proc mount")
+			log.WithError(err).Error("cannot move proc")
 			failed = true
 			return
 		}
@@ -364,7 +363,7 @@ var ring1Cmd = &cobra.Command{
 		log.Info("signaling to child process")
 		_, err = msgutil.MarshalToWriter(ring2Conn, ringSyncMsg{
 			Stage:  1,
-			Rootfs: tmpdir,
+			Rootfs: ring2Root,
 		})
 		if err != nil {
 			log.WithError(err).Error("cannot send ring sync msg to ring2")
@@ -383,7 +382,15 @@ var ring1Cmd = &cobra.Command{
 		if scmpfd == 0 {
 			log.Warn("received 0 as ring2 seccomp fd - syscall handling is broken")
 		} else {
-			stp, errchan := seccomp.Handle(scmpfd, cmd.Process.Pid, client)
+			handler := &seccomp.InWorkspaceHandler{
+				FD:          scmpfd,
+				Daemon:      client,
+				Ring2PID:    cmd.Process.Pid,
+				Ring2Rootfs: ring2Root,
+				BindEvents:  make(chan seccomp.BindEvent),
+			}
+
+			stp, errchan := seccomp.Handle(scmpfd, handler)
 			defer close(stp)
 			go func() {
 				t := time.NewTicker(10 * time.Millisecond)
@@ -534,6 +541,7 @@ var ring2Cmd = &cobra.Command{
 			failed = true
 			return
 		}
+
 		err = unix.Exec(ring2Opts.SupervisorPath, []string{"supervisor", "run", "--inns"}, os.Environ())
 		if err != nil {
 			log.WithError(err).WithField("cmd", ring2Opts.SupervisorPath).Error("cannot exec")
