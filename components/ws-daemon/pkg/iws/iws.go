@@ -297,7 +297,7 @@ func moveMount(targetPid int, source, target string) error {
 		return err
 	}
 
-	mntfd, err := SyscallOpenTree(unix.AT_FDCWD, source, FlagOpenTreeClone|FlagAtRecursive)
+	mntfd, err := SyscallOpenTree(unix.AT_FDCWD, source, FlagAtRecursive)
 	if err != nil {
 		return xerrors.Errorf("cannot open tree: %w", err)
 	}
