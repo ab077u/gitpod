@@ -14,7 +14,6 @@ import (
 	"unsafe"
 
 	"github.com/gitpod-io/gitpod/common-go/log"
-	"github.com/gitpod-io/gitpod/workspacekit/pkg/nsenter"
 	"github.com/gitpod-io/gitpod/workspacekit/pkg/readarg"
 	"golang.org/x/sys/unix"
 
@@ -219,30 +218,15 @@ func (h *InWorkspaceHandler) Mount(req *libseccomp.ScmpNotifReq) (val uint64, er
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		resp, err := h.Daemon.MountProc(ctx, &daemonapi.MountProcRequest{
-			Pid: int64(req.Pid),
+		_, err = h.Daemon.MountProc(ctx, &daemonapi.MountProcRequest{
+			Target: dest,
+			Pid:    int64(req.Pid),
 		})
 		if err != nil {
 			log.WithField("target", target).WithError(err).Error("cannot mount proc")
 			return Errno(unix.EFAULT)
 		}
 
-		mntfd, err := SyscallOpenTree(unix.AT_FDCWD, resp.Location, unix.O_CLOEXEC|FlagAtRecursive|FlagOpenTreeClone)
-		if err != nil {
-			log.WithField("location", resp.Location).WithError(err).Error("cannot open tree")
-			return Errno(unix.EFAULT)
-		}
-
-		// This File must not go out of context before the move mount is complete.
-		// Go os.File's close the underlying FD as runtime.Finalizer, i.e. if the
-		// file is GC'ed because it goes out of scope. That would break the MoveMount.
-		mntf := os.NewFile(mntfd, "")
-
-		err = nsenter.MoveMount(h.Ring2PID, mntf, target)
-		if err != nil {
-			log.WithField("target", target).WithField("loc", resp.Location).WithError(err).Error("cannot move proc")
-			return Errno(unix.EFAULT)
-		}
 		return 0, 0, 0
 	}
 

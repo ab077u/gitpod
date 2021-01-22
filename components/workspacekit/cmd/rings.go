@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/gitpod-io/gitpod/common-go/log"
-	"github.com/gitpod-io/gitpod/workspacekit/pkg/nsenter"
 	"github.com/gitpod-io/gitpod/workspacekit/pkg/seccomp"
 	daemonapi "github.com/gitpod-io/gitpod/ws-daemon/api"
 
@@ -303,17 +302,12 @@ var ring1Cmd = &cobra.Command{
 			failed = true
 			return
 		}
-		resp, err := client.MountProc(ctx, &daemonapi.MountProcRequest{
-			Pid: int64(cmd.Process.Pid),
+		_, err = client.MountProc(ctx, &daemonapi.MountProcRequest{
+			Target: procLoc,
+			Pid:    int64(cmd.Process.Pid),
 		})
 		if err != nil {
 			log.WithError(err).Error("cannot mount proc")
-			failed = true
-			return
-		}
-		err = nsenter.Mount(cmd.Process.Pid, resp.Location, procLoc, "", unix.MS_MOVE, "")
-		if err != nil {
-			log.WithError(err).Error("cannot move proc")
 			failed = true
 			return
 		}

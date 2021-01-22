@@ -2,7 +2,9 @@ packages:
   - name: app
     type: go
     srcs:
-      - "**/*.go"
+      - "cmd/**/*.go"
+      - "pkg/**/*.go"
+      - "main.go"
       - "go.mod"
       - "go.sum"
     deps:
@@ -18,7 +20,8 @@ packages:
   - name: content-initializer
     type: go
     srcs:
-      - "**/*.go"
+      - "pkg/**/*.go"
+      - "cmd/content-initializer/**/*.go"
       - "go.mod"
       - "go.sum"
     deps:
@@ -39,6 +42,7 @@ packages:
     deps:
       - :app
       - :content-initializer
+      - components/ws-daemon/move-mount:app
     argdeps:
       - imageRepoBase
     config:
