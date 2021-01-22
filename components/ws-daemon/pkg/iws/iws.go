@@ -284,6 +284,14 @@ func (wbs *InWorkspaceServiceServer) MountProc(ctx context.Context, req *api.Mou
 		}
 	}
 
+	mntfd, err := SyscallOpenTree(unix.AT_FDCWD, nodeStaging, FlagOpenTreeClone|FlagAtRecursive)
+	if err != nil {
+		log.WithError(err).Error("SyscallOpenTree failed")
+	} else {
+		log.Info("opentree succeeded")
+		unix.Close(int(mntfd))
+	}
+
 	containerStaging, err := ioutil.TempDir(wbs.Session.ServiceLocDaemon, "proc-staging")
 	if err != nil {
 		return nil, xerrors.Errorf("cannot prepare proc-staging for container: %w", err)
