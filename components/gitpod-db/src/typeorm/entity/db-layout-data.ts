@@ -7,13 +7,12 @@
 import { PrimaryColumn, Column, Entity } from "typeorm";
 
 import { LayoutData } from "@gitpod/gitpod-protocol";
-import { TypeORM } from "../typeorm";
 import { Transformer } from "../transformer";
 
 @Entity()
 export class DBLayoutData implements LayoutData {
 
-    @PrimaryColumn(TypeORM.UUID_COLUMN_TYPE)
+    @PrimaryColumn("varchar")
     workspaceId: string;
 
     @Column({

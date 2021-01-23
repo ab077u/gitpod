@@ -31,7 +31,7 @@ const (
 	// Used to communicate router error happening in the matcher with the error handler which set the code to the HTTP response
 	routerErrorCode = "routerErrorCode"
 
-	workspaceIDRegex   = "(?P<" + workspaceIDIdentifier + ">[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+	workspaceIDRegex   = "(?P<" + workspaceIDIdentifier + ">[a-z]{2,16}-[a-z]{2,16}-[0-9a-z]{8})"
 	workspacePortRegex = "(?P<" + workspacePortIdentifier + ">[0-9]+)-"
 )
 

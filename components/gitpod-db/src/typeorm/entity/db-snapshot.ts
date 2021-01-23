@@ -24,7 +24,7 @@ export class DBSnapshot implements Snapshot {
     })
     creationTime: string;
 
-    @Column(TypeORM.UUID_COLUMN_TYPE)
+    @Column("varchar")
     @Index("ind_originalWorkspaceId")
     originalWorkspaceId: string;
 

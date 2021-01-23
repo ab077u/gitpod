@@ -13,7 +13,7 @@ import { Transformer } from "../transformer";
 @Entity()
 // on DB but not Typeorm: @Index("ind_lastModified", ["_lastModified"])   // DBSync
 export class DBWorkspace implements Workspace {
-    @PrimaryColumn(TypeORM.UUID_COLUMN_TYPE)
+    @PrimaryColumn("varchar")
     id: string;
 
     @Column("varchar")

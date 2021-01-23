@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gitpod-io/gitpod/common-go/util"
 	csapi "github.com/gitpod-io/gitpod/content-service/api"
 	protocol "github.com/gitpod-io/gitpod/gitpod-protocol"
 	imgbldr "github.com/gitpod-io/gitpod/image-builder/api"
@@ -96,11 +97,7 @@ func LaunchWorkspaceDirectly(it *Test, opts ...LaunchWorkspaceDirectlyOpt) (res 
 		it.t.Fatal(err)
 		return
 	}
-	workspaceID, err := uuid.NewRandom()
-	if err != nil {
-		it.t.Fatal(err)
-		return
-	}
+	workspaceID := util.GenerateWorkspaceID()
 
 	var workspaceImage string
 	if options.BaseImage != "" {
@@ -151,10 +148,10 @@ func LaunchWorkspaceDirectly(it *Test, opts ...LaunchWorkspaceDirectlyOpt) (res 
 
 	req := &wsmanapi.StartWorkspaceRequest{
 		Id:            instanceID.String(),
-		ServicePrefix: workspaceID.String(),
+		ServicePrefix: workspaceID,
 		Metadata: &wsmanapi.WorkspaceMetadata{
 			Owner:  gitpodBuiltinUserID,
-			MetaId: workspaceID.String(),
+			MetaId: workspaceID,
 		},
 		Type: wsmanapi.WorkspaceType_REGULAR,
 		Spec: &wsmanapi.StartWorkspaceSpec{

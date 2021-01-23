@@ -241,11 +241,7 @@ func (wspd *WorkspaceManagerPrescaleDriver) startGhostWorkspaces(ctx context.Con
 		}
 		instanceID := instanceUUID.String()
 		ids[i] = instanceID
-		metaUUID, err := uuid.NewRandom()
-		if err != nil {
-			return nil, err
-		}
-		metaID := metaUUID.String()
+		metaID := util.GenerateWorkspaceID()
 
 		_, err = wspd.Client.StartWorkspace(ctx, &api.StartWorkspaceRequest{
 			Type: api.WorkspaceType_GHOST,

@@ -35,7 +35,7 @@ export class DBPrebuiltWorkspace implements PrebuiltWorkspace {
     })
     creationTime: string;
 
-    @Column(TypeORM.UUID_COLUMN_TYPE)
+    @Column("varchar")
     @Index('ind_buildWorkspaceId')
     buildWorkspaceId: string;
 

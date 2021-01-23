@@ -13,23 +13,23 @@ const expect = chai.expect;
 export class ParseWorkspaceIdTest {
 
     @test public parseWorkspaceIdFromHostname_fromWorkspaceLocation() {
-        const actual = parseWorkspaceIdFromHostname("b7e0eaf8-ec73-44ec-81ea-04859263b656.ws-eu01.gitpod.io");
-        expect(actual).to.equal("b7e0eaf8-ec73-44ec-81ea-04859263b656");
+        const actual = parseWorkspaceIdFromHostname("moccasin-ferret-155799b3.ws-eu01.gitpod.io");
+        expect(actual).to.equal("moccasin-ferret-155799b3");
     }
 
     @test public parseWorkspaceIdFromHostname_fromWorkspacePortLocation() {
-        const actual = parseWorkspaceIdFromHostname("3000-b7e0eaf8-ec73-44ec-81ea-04859263b656.ws-eu01.gitpod.io");
-        expect(actual).to.equal("b7e0eaf8-ec73-44ec-81ea-04859263b656");
+        const actual = parseWorkspaceIdFromHostname("3000-moccasin-ferret-155799b3.ws-eu01.gitpod.io");
+        expect(actual).to.equal("moccasin-ferret-155799b3");
     }
 
     @test public parseWorkspaceIdFromHostname_fromWorkspacePortLocationWithWebviewPrefix() {
-        const actual = parseWorkspaceIdFromHostname("webview-3000-b7e0eaf8-ec73-44ec-81ea-04859263b656.ws-eu01.gitpod.io");
-        expect(actual).to.equal("b7e0eaf8-ec73-44ec-81ea-04859263b656");
+        const actual = parseWorkspaceIdFromHostname("webview-3000-moccasin-ferret-155799b3.ws-eu01.gitpod.io");
+        expect(actual).to.equal("moccasin-ferret-155799b3");
     }
 
     @test public parseWorkspaceIdFromHostname_fromWorkspacePortLocationWithWebviewPrefixCustomHost() {
-        const actual = parseWorkspaceIdFromHostname("webview-3000-ca81a50f-09d7-465c-acd9-264a747d5351.ws-eu01.some.subdomain.somehost.com");
-        expect(actual).to.equal("ca81a50f-09d7-465c-acd9-264a747d5351");
+        const actual = parseWorkspaceIdFromHostname("webview-3000-moccasin-ferret-155799b3.ws-eu01.some.subdomain.somehost.com");
+        expect(actual).to.equal("moccasin-ferret-155799b3");
     }
 }
 module.exports = new ParseWorkspaceIdTest()
